@@ -1,0 +1,87 @@
+- name: Create a ext4 filesystem on "{{ device_path }}"
+  filesystem:
+    fstype: ext4
+    dev: "{{ device_path }}"
+
+- name: Create a directory to mount "{{ device_path }}"
+  file:
+    path: "{{ mount_path }}"
+    state: directory
+    mode: '0755'
+
+- name: Mount File System
+  mount:
+    path: "{{ mount_path }}"
+    src: "{{ device_path }}"
+    fstype: ext4
+    opts: noatime,nobarrier
+    state: mounted
+
+- name: Create swap file
+  command: "dd if=/dev/zero of={{ swapfile_path }} bs=1M count={{ swapfile_size }}"
+
+- name: Make swap file swappable
+  command: "mkswap {{ swapfile_path }}"
+
+- name: Turn swap on
+  command: "swapon {{ swapfile_path }}"
+
+- name: Overcommit memory changes
+  command: "echo 0 | sudo tee /proc/sys/vm/overcommit_memory"
+
+- name: transparent_hugepage
+  command: "echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled"
+
+- name: add_random
+  command: "echo 0 > /sys/block/{{ device_name }}/queue/add_random"
+
+- name: rq_affinity
+  command: "echo 1 > /sys/block/{{ device_name }}/queue/rq_affinity"
+
+- name: sheduler
+  command: "echo none > /sys/block/{{ device_name }}/queue/scheduler"
+
+- name: max_map_count
+  sysctl:
+    name: vm.max_map_count
+    value: '4394375'
+    state: present
+
+- name: fs.file-max
+  sysctl:
+    name: fs.file-max
+    value: '65536'
+    state: present
+
+- name: install packages
+  package:
+    name: "{{ item }}"
+    state: latest
+  with_item:
+    - ntpd
+    - glances
+
+- name: min_free_kbytes
+  shell: |
+    memtot=$(grep MemTotal /proc/meminfo | awk '{printf "%.0f",$2}')
+    sysctl -w vm.min_free_kbytes=$(echo "scale=0;sqrt ($memtot*16)" | bc)
+
+- name: readahead
+  command: "/sbin/blockdev --setra 8192 /dev/{{ device_name }}"
+
+- name: pam_limits.so
+  lineinfile:
+    path: /etc/pam.d/su
+    line: session required pam_limits.so
+    create: yes
+
+    #- name: add limits
+    #  blockinfile:
+    #    path: /etc/security/limits.conf
+    #    block: |
+    #        # dbadmin - admin user for current DB (dbadmin/memsql/clickhouse)
+    #        dbadmin -       nice    0
+    #        dbadmin -       nofile  65536
+    #        dbadmin -       as      unlimited
+    #        dbadmin -       nproc      128000
+    #        dbadmin -       fsize      unlimited

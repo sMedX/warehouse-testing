@@ -1,0 +1,5 @@
+device_path: /dev/xvdb
+device_name: xvdb
+mount_path: /ch
+swapfile_path: /swapfile
+swapfile_size: 4000
